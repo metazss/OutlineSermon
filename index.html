@@ -95,7 +95,7 @@ h1 span{color:var(--accent)}
 .status{display:flex;align-items:center;gap:8px;background:rgba(20,27,45,.88);border:1px solid var(--line);border-radius:999px;padding:7px 12px;font-size:13px;color:var(--muted);max-width:calc(100% - 60px);min-width:0}
 .status .dot{width:9px;height:9px;border-radius:50%;background:var(--said);flex:none}
 .status.live .dot{background:var(--accent);animation:pulse 1.4s infinite}
-.status .heard{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;direction:rtl;text-align:left}
+.status .heard{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(140,155,255,.6)}100%{box-shadow:0 0 0 10px rgba(140,155,255,0)}}
 .dock{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(var(--safe-b) + 16px);display:flex;align-items:center;gap:6px;background:rgba(20,27,45,.92);border:1px solid var(--line);border-radius:999px;padding:7px;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
 .dock button{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;color:var(--text)}
@@ -112,6 +112,8 @@ h1 span{color:var(--accent)}
 .set .h{display:flex;justify-content:space-between;align-items:center;gap:10px}
 .set .v{color:var(--accent);font-weight:700;font-variant-numeric:tabular-nums}
 .set small{color:var(--muted);font-size:13px}
+.beta{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);border:1px solid var(--accent);border-radius:999px;padding:1px 7px;margin-left:4px;vertical-align:2px}
+.status .dot{transition:transform .06s linear}
 input[type=range]{width:100%;accent-color:var(--accent)}
 select{background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font:inherit;width:100%}
 .toggle{position:relative;width:52px;height:32px;border-radius:999px;background:var(--panel-2);border:1px solid var(--line);flex:none;transition:background .2s}
@@ -241,6 +243,9 @@ select{background:var(--panel-2);color:var(--text);border:1px solid var(--line);
     <div class="h"><span>Mirror text<br><small>For a teleprompter glass</small></span><button class="toggle" id="s-mirror" role="switch" aria-label="Mirror text"></button></div>
   </div>
   <div class="set">
+    <div class="h"><span>Voice-level assist <span class="beta">Experimental</span><br><small>Measures how loud you're speaking, so the fade moves only while sound is coming out and stops the instant you go quiet. Uses "Stay ahead of my voice" (2 words if that's off). Some iPhones don't allow this alongside speech recognition; if so, the app turns it off and tells you.</small></span><button class="toggle" id="s-assist" role="switch" aria-label="Voice-level assist"></button></div>
+  </div>
+  <div class="set">
     <div class="h"><span>Show what I hear<br><small>A live caption at the top while listening</small></span><button class="toggle" id="s-caption" role="switch" aria-label="Show what I hear"></button></div>
   </div>
   <div class="set">
@@ -278,7 +283,7 @@ Si pierdes tu lugar, toca cualquier palabra para empezar desde ahí. Que Dios be
 let scripts = store.get('pulpito.scripts', null);
 if (!Array.isArray(scripts)) scripts = [DEMO];
 const saveScripts = () => store.set('pulpito.scripts', scripts);
-const settings = Object.assign({ size: 40, focus: 30, lang: 'es-MX', mirror: false, caption: true, awake: true, sens: 'high', lead: 2 },
+const settings = Object.assign({ size: 40, focus: 30, lang: 'es-MX', mirror: false, caption: true, awake: true, sens: 'high', lead: 2, assist: false },
   store.get('pulpito.settings', {}));
 const saveSettings = () => store.set('pulpito.settings', settings);
 const dismissed = store.get('pulpito.dismissed', {});
@@ -534,9 +539,13 @@ function frame(now) {
   // While you're mid-sentence, run slightly ahead of the recognizer (it reports words ~0.3 s late)
   // While you're reading on-script, walk ahead at your own pace to cover the phone's recognition delay.
   // It never goes backwards on its own, so nothing flickers; it simply stops when you stop.
-  const onScript = pos >= 0 && now - heardT < 700 && now - advT < 1500;
+  if (meter) readLevel(now);
+  const assisting = !!meter && levelLive;
+  const onScript = pos >= 0 && now - advT < 1500 && (assisting ? voiced : now - heardT < 700);
+  const leadMax = assisting ? (settings.lead || 2) : settings.lead;
   if (predicted < pos) predicted = pos;
-  if (onScript && settings.lead > 0) predicted = Math.min(pos + settings.lead, predicted + rate * dt);
+  if (onScript && leadMax > 0) predicted = Math.min(pos + leadMax, predicted + rate * dt);
+  if (meter && listening) busy = true;
   const goal = Math.min(keys.length - 1, predicted);
   if (shown < goal) {
     const gap = goal - shown;
@@ -646,10 +655,56 @@ function updatePlay() {
   b.setAttribute('aria-label', listening ? 'Pause listening' : 'Start listening');
   $('#pr-caption').classList.toggle('on', settings.caption);
 }
+/* ---------- Voice-level assist (experimental) ---------- */
+let meter = null, levelLive = false, voiced = false, floorLv = 0.01, lastVoiceT = 0, voicedAcc = 0, lastLevelT = 0, meterT = 0;
+async function levelOn() {
+  if (meter || !settings.assist) return;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true } });
+    if (!listening || !settings.assist) { stream.getTracks().forEach(t => t.stop()); return; }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AC(); const src = ctx.createMediaStreamSource(stream);
+    const an = ctx.createAnalyser(); an.fftSize = 1024; src.connect(an);
+    meter = { stream, ctx, an, buf: new Float32Array(an.fftSize) };
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    floorLv = 0.01; levelLive = false; voiced = false; voicedAcc = 0; meterT = performance.now(); loop();
+  } catch {
+    assistFailed('Your iPhone blocked the volume meter, so voice-level assist is off.');
+  }
+}
+function levelOff() {
+  if (!meter) return;
+  try { meter.stream.getTracks().forEach(t => t.stop()); meter.ctx.close(); } catch {}
+  meter = null; levelLive = false; voiced = false;
+  $('#pr-status .dot').style.transform = '';
+}
+function readLevel(now) {
+  if (now - lastLevelT < 15) return; const step = Math.min(0.1, (now - lastLevelT) / 1000); lastLevelT = now;
+  if (meter.ctx.state === 'suspended') { meter.ctx.resume().catch(() => {}); return; }
+  meter.an.getFloatTimeDomainData(meter.buf);
+  let sum = 0; for (let i = 0; i < meter.buf.length; i++) sum += meter.buf[i] * meter.buf[i];
+  const rms = Math.sqrt(sum / meter.buf.length);
+  if (rms > 0) levelLive = true;
+  // the quiet level of the room adapts slowly; speech is anything clearly above it
+  floorLv = rms < floorLv ? floorLv * 0.9 + rms * 0.1 : floorLv * 0.998 + rms * 0.002;
+  const thresh = Math.max(0.004, floorLv * 2.2);
+  if (rms > thresh) lastVoiceT = now;
+  voiced = now - lastVoiceT < 120;
+  if (heardT > meterT) { meterT = heardT; voicedAcc = 0; }   // recognition is still answering
+  if (voiced) voicedAcc += step;
+  $('#pr-status .dot').style.transform = 'scale(' + (1 + Math.min(1.2, rms / thresh * 0.35)) + ')';
+  // If you've been talking for a while and recognition has gone silent, the two are clashing
+  if (listening && micOk && now - meterT > 8000 && voicedAcc > 5) assistFailed('Speech recognition stopped while voice-level assist was on, so the assist is now off.', true);
+}
+function assistFailed(msg, restart) {
+  settings.assist = false; saveSettings(); syncSheet(); levelOff();
+  if (restart) { store.set('pulpito.notice', msg); freshStart(true); } else toast(msg, 6000);
+}
 function startListening() {
   if (!SR) { setStatus('Voice tracking needs Safari on iPhone with Siri & Dictation on'); toast('This browser cannot do speech recognition. Open in Safari on your iPhone.', 5000); return; }
   if (micStale) { freshStart(true); return; }
   listening = true; micUsed = true; updatePlay(); setStatus('Listening…'); spawn();
+  if (settings.assist) setTimeout(levelOn, 300);
   clearTimeout(watchdog);
   if (!micOk) watchdog = setTimeout(() => { if (listening && !micOk) freshStart(true); }, 3000);
   if (settings.awake) wakeOn();
@@ -664,7 +719,7 @@ function spawn() {
     for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript + ' ';
     const words = t.trim().split(/\s+/).filter(Boolean);
     if (!words.length) return;
-    if (settings.caption) $('#pr-heard').textContent = words.slice(-9).join(' ');
+    if (settings.caption) $('#pr-heard').textContent = words.slice(-6).join(' ');
     heardT = performance.now(); loop();
     const before = pos; onHeard(words);
     // If the top guess didn't place you, try the recognizer's other guesses for the latest phrase
@@ -678,7 +733,7 @@ function spawn() {
     }
   };
   r.onerror = e => {
-    if (e.error === 'audio-capture') { freshStart(listening); return; }
+    if (e.error === 'audio-capture') { if (meter) { assistFailed('Your iPhone can\'t share the microphone between speech recognition and the volume meter, so voice-level assist is off.', true); return; } freshStart(listening); return; }
     if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
       if (resuming) { resuming = false; stopListening(); setStatus('Tap play to continue'); return; }
       stopListening();
@@ -695,7 +750,7 @@ function spawn() {
 function stopListening() {
   listening = false; clearTimeout(restartT);
   const r = rec; rec = null; try { r && r.abort(); } catch {}
-  updatePlay(); setStatus();
+  levelOff(); updatePlay(); setStatus();
 }
 $('#pr-play').onclick = () => listening ? stopListening() : startListening();
 $('#pr-restart').onclick = () => { userHold = 0; dragVel = 0; pos = -1; shown = -1; predicted = pos; paintSaid(true); lastSig = ''; loop(); if (!listening) setStatus(); };
@@ -740,6 +795,7 @@ function syncSheet() {
   $('#s-mirror').setAttribute('aria-checked', settings.mirror);
   $('#s-caption').setAttribute('aria-checked', settings.caption);
   $('#s-awake').setAttribute('aria-checked', settings.awake);
+  $('#s-assist').setAttribute('aria-checked', settings.assist);
 }
 function openSheet() { syncSheet(); $('#sheet').hidden = $('#sheet-bg').hidden = false; }
 function closeSheet() { $('#sheet').hidden = $('#sheet-bg').hidden = true; }
@@ -750,10 +806,11 @@ $('#s-focus').oninput = e => { settings.focus = +e.target.value; saveSettings();
 $('#s-lead').onchange = e => { settings.lead = +e.target.value; saveSettings(); };
 $('#s-sens').onchange = e => { settings.sens = e.target.value; saveSettings(); eqCache.clear(); lastSig = ''; };
 $('#s-lang').onchange = e => { settings.lang = e.target.value; saveSettings(); if (listening) spawn(); };
-[['s-mirror', 'mirror'], ['s-caption', 'caption'], ['s-awake', 'awake']].forEach(([id, k]) => {
+[['s-mirror', 'mirror'], ['s-caption', 'caption'], ['s-awake', 'awake'], ['s-assist', 'assist']].forEach(([id, k]) => {
   $('#' + id).onclick = () => {
     settings[k] = !settings[k]; saveSettings(); syncSheet(); applySettings(); updatePlay();
     if (k === 'awake' && !$('#prompter').hidden) settings.awake ? wakeOn() : wakeOff();
+    if (k === 'assist' && listening) { settings.assist ? levelOn() : levelOff(); }
     if (k === 'caption' && listening) setStatus(settings.caption ? 'Listening…' : '');
   };
 });
@@ -761,6 +818,8 @@ window.addEventListener('resize', () => { if (!$('#prompter').hidden) loop(); })
 
 applySettings(); renderHome();
 (() => {
+  const note = store.get('pulpito.notice', null);
+  if (note) { store.set('pulpito.notice', null); setTimeout(() => toast(note, 6000), 600); }
   const r = store.get('pulpito.resume', null);
   if (!r) return;
   store.set('pulpito.resume', null);
