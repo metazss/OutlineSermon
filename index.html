@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAIAAACyr5FlAAAC90lEQVR4Xu3dsW0UYRSF0TEiIqEBQ0AdJPRAKcQExJRCDyTUQQAUQjCSZYEX9uL3v+XtnJODZn5df7sar+2bZ89vN3jIE8fCKcaBcZBTDpSDnHKgHOSUA+UgpxwoBznlQDnIKQfKQU45UA5yyoFykFMOlIOccqAc5JQD5SCnHCgHOeVAOcgpB8pBTjlQDnLKgXKQUw6Ug5xyoBzklAPlIKccKAc55UA5yCkHykFOOVAOcsqBcpB7mv+TAq/fvC34Xw7my+dPzXd80/wHAM3ikTon0vqewzIer/MM+8bReVfXre0k+8bBOE3jaBv7QfScZ9M4mMg48BCMnHJw6XJ0Pro5gp7zVA4uXY5taxr7EfRkY9t6y9F2V1es8wy7v/G263mGc2U6Z7G7zDgYwRtS/oM3pIyjHCgHOeVAOcgpB8pBTjlQDnLKgXKQUw6Ug1zTT9l/+Pg9vzb+5P27F6sPaPnnOcxiqaUTWfuewzJWW3rCq8qx9KL53YqErC0Hoy0Zh2z0W3Hm9eNYcZWco/zk68fB1SgeR/l4idSef/E4uCbGwUnGgXGQUw6Ug1xxOVY84ed8tedfPA6uSf04asfL+cpPvn4c21Z/lfxV+TK6fycYs6z6sM+u9lE/D1rRjN2Sl5U7666b3dITXluOOxJSbuksdk3jYKK1LyuMZhycZBwYBznlQDnIKQfKQU45UA5yyoFykFMOlINc028T/MWPb1/zS53n9uWreRd9T/fnOQ4yi/vmTqT1PccBl7Ftg++6bxzHXMZu6L33jYNxmsYx9Eun0MQTaBoHExkHJxkHxkGuqRxzHwRVmXgCTeNgor5xTPzSqTL03vvGsW1Tz+iRhi7jYj9IPfGJ0D+YO4td93dlGaT1ZYVZjIOTjAPjIKccKAc55UA5yCkHykFOOVAOcsqBcpBTDpSDnHKgHOSUA+UgpxwoBznlQDnIKQfKQU45UA5yyoFykFMOlIOccqAc5JQD5SCnHCgHOeVAOcgpB8pBTjlQDnI/ATd0YN+3Wq3TAAAAAElFTkSuQmCC">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Fraunces:opsz,wght@9..144,600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Montserrat:wght@700;800&display=swap">
 <style>
 /* Layout: one-column app (home / editor) + full-screen prompter with a floating control pill.
    Single deliberate dark look: midnight ink, periwinkle "reading light" accent. */
@@ -21,7 +21,7 @@
   --text:#EEF1FA; --muted:#8A93AD; --said:#4E5875;
   --accent:#8C9BFF; --accent-ink:#0A0F1C; --glow:rgba(140,155,255,.24);
   --danger:#FF7A85;
-  --f-display:"Fraunces",Georgia,serif;
+  --f-display:"Montserrat","Helvetica Neue",Arial,sans-serif;
   --f-body:"Atkinson Hyperlegible",-apple-system,"Helvetica Neue",Arial,sans-serif;
   --safe-t:env(safe-area-inset-top,0px); --safe-b:env(safe-area-inset-bottom,0px);
   --safe-l:env(safe-area-inset-left,0px); --safe-r:env(safe-area-inset-right,0px);
@@ -41,7 +41,7 @@ svg{display:block}
 .chip{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:9px 16px;font-weight:700;font-size:15px}
 .chip.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .iconbtn{width:42px;height:42px;border-radius:50%;background:var(--panel);border:1px solid var(--line);display:grid;place-items:center}
-h1{font-family:var(--f-display);font-weight:600;font-size:44px;line-height:1;margin:0;letter-spacing:-.01em}
+h1{font-family:var(--f-display);font-weight:800;font-size:42px;line-height:1.05;margin:0;letter-spacing:-.02em}
 h1 span{color:var(--accent)}
 .sub{color:var(--muted);margin:-12px 0 0;font-size:15px}
 .notice{display:flex;gap:12px;align-items:flex-start;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:14px 14px 14px 16px;font-size:15px;color:var(--muted)}
@@ -79,7 +79,7 @@ h1 span{color:var(--accent)}
 #pr-text{position:relative;padding:0 max(22px,calc(var(--safe-r) + 16px)) 0 max(22px,calc(var(--safe-l) + 16px));max-width:900px;margin:0 auto;font-size:var(--size,40px);line-height:1.28;font-weight:700;transition:transform .2s}
 #pr-text.mirror{transform:scaleX(-1)}
 #pr-text p{margin:0 0 .7em}
-.w{color:var(--text);transition:color .16s ease-out}
+.w{color:var(--text);transition:color .12s ease-out}
 .w.said{color:var(--said)}
 .w.now{color:var(--said)}
 .w.next{text-decoration:underline;text-decoration-color:var(--accent);text-decoration-thickness:.07em;text-underline-offset:.16em}
@@ -107,7 +107,7 @@ h1 span{color:var(--accent)}
 .sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:40}
 .sheet{position:fixed;left:0;right:0;bottom:0;z-index:50;background:var(--panel);border-top:1px solid var(--line);border-radius:24px 24px 0 0;padding:10px max(20px,var(--safe-r)) calc(var(--safe-b) + 22px) max(20px,var(--safe-l));max-height:85vh;overflow-y:auto}
 .sheet .grab{width:40px;height:5px;border-radius:3px;background:var(--line);margin:0 auto 14px}
-.sheet h2{font-family:var(--f-display);font-weight:600;font-size:24px;margin:0 0 14px}
+.sheet h2{font-family:var(--f-display);font-weight:700;font-size:24px;margin:0 0 14px}
 .set{display:flex;flex-direction:column;gap:8px;padding:12px 0;border-top:1px solid var(--line)}
 .set .h{display:flex;justify-content:space-between;align-items:center;gap:10px}
 .set .v{color:var(--accent);font-weight:700;font-variant-numeric:tabular-nums}
@@ -218,6 +218,16 @@ select{background:var(--panel-2);color:var(--text);border:1px solid var(--line);
     <small>Higher settings move on fewer heard words. If the text jumps ahead while you improvise, lower it. A wired or Bluetooth headset mic close to your mouth picks up quiet speech far better than the phone's built-in mic.</small>
   </div>
   <div class="set">
+    <label for="s-lead">Stay ahead of my voice</label>
+    <select id="s-lead">
+      <option value="0">Off: only fade words the phone has heard</option>
+      <option value="1">1 word ahead</option>
+      <option value="2">2 words ahead (recommended)</option>
+      <option value="3">3 words ahead</option>
+    </select>
+    <small>The iPhone reports your words a moment late. While you read, the fade moves ahead at your pace to make up for it. If words fade before you say them, lower this.</small>
+  </div>
+  <div class="set">
     <label for="s-lang">Speech language</label>
     <select id="s-lang">
       <option value="es-MX">Español (México)</option>
@@ -268,7 +278,7 @@ Si pierdes tu lugar, toca cualquier palabra para empezar desde ahí. Que Dios be
 let scripts = store.get('pulpito.scripts', null);
 if (!Array.isArray(scripts)) scripts = [DEMO];
 const saveScripts = () => store.set('pulpito.scripts', scripts);
-const settings = Object.assign({ size: 40, focus: 30, lang: 'es-MX', mirror: false, caption: true, awake: true, sens: 'high' },
+const settings = Object.assign({ size: 40, focus: 30, lang: 'es-MX', mirror: false, caption: true, awake: true, sens: 'high', lead: 2 },
   store.get('pulpito.settings', {}));
 const saveSettings = () => store.set('pulpito.settings', settings);
 const dismissed = store.get('pulpito.dismissed', {});
@@ -455,7 +465,7 @@ function openPrompter(id, restore) {
   current = s; build(s.text); applySettings(); show('prompter');
   pos = -1;
   if (restore && restore.pos >= 0) pos = Math.min(restore.pos, keys.length - 1);
-  shown = pos; applied = -1; paintSaid(true);
+  shown = pos; applied = -1; predicted = pos; paintSaid(true);
   y = targetY(); vel = 0; dragVel = 0; userHold = 0; place();
   updatePlay(); setStatus(); loop();
   if (settings.awake) wakeOn();
@@ -479,7 +489,7 @@ function build(text) {
 }
 /* pos = where the speech matcher says you are.
    shown = what is drawn; it sweeps toward pos word by word so fading and scrolling stay fluid. */
-let shown = -1, applied = -1, nextEl = null, rate = 2.2, advT = 0, heardT = -1e9;
+let shown = -1, applied = -1, nextEl = null, rate = 2.2, advT = -1e9, heardT = -1e9, predicted = -1;
 function setPos(p) {
   p = Math.max(-1, Math.min(p, keys.length - 1));
   if (p === pos) return;
@@ -490,6 +500,7 @@ function setPos(p) {
   }
   advT = now;
   if (p < pos || p - shown > 40) shown = Math.max(-1, p > pos ? p - 6 : p); // big jumps: don't sweep through pages
+  if (p < pos) predicted = p;
   pos = p; loop();
 }
 function paintSaid(full) {
@@ -521,15 +532,18 @@ function frame(now) {
   let busy = false;
   // 1. sweep the read-words fade toward the spoken position
   // While you're mid-sentence, run slightly ahead of the recognizer (it reports words ~0.3 s late)
-  const talking = now - heardT < 500 && pos >= 0;
-  const lead = talking ? Math.min(1, rate * 0.3) : 0;
-  const goal = Math.min(keys.length - 1, pos + lead);
+  // While you're reading on-script, walk ahead at your own pace to cover the phone's recognition delay.
+  // It never goes backwards on its own, so nothing flickers; it simply stops when you stop.
+  const onScript = pos >= 0 && now - heardT < 700 && now - advT < 1500;
+  if (predicted < pos) predicted = pos;
+  if (onScript && settings.lead > 0) predicted = Math.min(pos + settings.lead, predicted + rate * dt);
+  const goal = Math.min(keys.length - 1, predicted);
   if (shown < goal) {
     const gap = goal - shown;
-    shown = reduceMotion ? goal : Math.min(goal, shown + Math.max(16, gap * 14) * dt);
+    shown = reduceMotion ? goal : Math.min(goal, shown + Math.max(20, gap * 20) * dt);
     busy = true;
-  } else if (shown > pos + 1) shown = pos;
-  if (talking) busy = true;
+  }
+  if (onScript) busy = true;
   paintSaid(false);
   // 2. scrolling
   if (dragging) busy = true;
@@ -582,7 +596,7 @@ textEl.addEventListener('click', e => {
   let t = +w.dataset.t, m = -1;
   for (; t >= 0; t--) if (allEls[t].dataset.m !== undefined) { m = +allEls[t].dataset.m; break; }
   userHold = 0; dragVel = 0;
-  pos = Math.max(-1, m - 1); shown = pos; paintSaid(true); lastSig = ''; loop();
+  pos = Math.max(-1, m - 1); shown = pos; predicted = pos; paintSaid(true); lastSig = ''; loop();
 });
 
 function accept(p) { if (globalT) { clearTimeout(globalT); globalT = null; } setPos(p); }
@@ -684,7 +698,7 @@ function stopListening() {
   updatePlay(); setStatus();
 }
 $('#pr-play').onclick = () => listening ? stopListening() : startListening();
-$('#pr-restart').onclick = () => { userHold = 0; dragVel = 0; pos = -1; shown = -1; paintSaid(true); lastSig = ''; loop(); if (!listening) setStatus(); };
+$('#pr-restart').onclick = () => { userHold = 0; dragVel = 0; pos = -1; shown = -1; predicted = pos; paintSaid(true); lastSig = ''; loop(); if (!listening) setStatus(); };
 $('#pr-close').onclick = () => { stopListening(); wakeOff(); renderHome(); show('home'); };
 $('#pr-edit').onclick = () => { stopListening(); wakeOff(); openEditor(current.id, true); };
 $('#pr-caption').onclick = () => { settings.caption = !settings.caption; saveSettings(); updatePlay(); syncSheet(); setStatus(listening ? (settings.caption ? 'Listening…' : '') : undefined); };
@@ -722,7 +736,7 @@ function applySettings() {
 function syncSheet() {
   $('#s-size').value = settings.size; $('#s-size-v').textContent = settings.size + ' pt';
   $('#s-focus').value = settings.focus; $('#s-focus-v').textContent = settings.focus + '%';
-  $('#s-lang').value = settings.lang; $('#s-sens').value = settings.sens;
+  $('#s-lang').value = settings.lang; $('#s-sens').value = settings.sens; $('#s-lead').value = settings.lead;
   $('#s-mirror').setAttribute('aria-checked', settings.mirror);
   $('#s-caption').setAttribute('aria-checked', settings.caption);
   $('#s-awake').setAttribute('aria-checked', settings.awake);
@@ -733,6 +747,7 @@ $('#home-settings').onclick = openSheet; $('#pr-settings').onclick = openSheet;
 $('#sheet-bg').onclick = closeSheet; $('#sheet-done').onclick = closeSheet;
 $('#s-size').oninput = e => { settings.size = +e.target.value; saveSettings(); syncSheet(); applySettings(); };
 $('#s-focus').oninput = e => { settings.focus = +e.target.value; saveSettings(); syncSheet(); applySettings(); };
+$('#s-lead').onchange = e => { settings.lead = +e.target.value; saveSettings(); };
 $('#s-sens').onchange = e => { settings.sens = e.target.value; saveSettings(); eqCache.clear(); lastSig = ''; };
 $('#s-lang').onchange = e => { settings.lang = e.target.value; saveSettings(); if (listening) spawn(); };
 [['s-mirror', 'mirror'], ['s-caption', 'caption'], ['s-awake', 'awake']].forEach(([id, k]) => {
