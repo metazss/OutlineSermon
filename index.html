@@ -640,7 +640,7 @@ function frame(now) {
   const leadMax = assisting ? (settings.lead || 2) : settings.lead;
   if (predicted < pos) predicted = pos;
   if (onScript && leadMax > 0) predicted = Math.min(pos + leadMax, predicted + rate * dt);
-  if (meter && listening) busy = true;
+  if (meter && engineOn) busy = true;
   const goal = Math.min(keys.length - 1, predicted);
   if (shown < goal) {
     const gap = goal - shown;
@@ -756,7 +756,7 @@ async function levelOn() {
   if (meter || !settings.assist) return;
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true } });
-    if (!listening || !settings.assist) { stream.getTracks().forEach(t => t.stop()); return; }
+    if (!engineOn || !settings.assist || meter) { stream.getTracks().forEach(t => t.stop()); return; }
     const AC = window.AudioContext || window.webkitAudioContext;
     const ctx = new AC(); const src = ctx.createMediaStreamSource(stream);
     const an = ctx.createAnalyser(); an.fftSize = 1024; src.connect(an);
@@ -785,33 +785,52 @@ function readLevel(now) {
   const thresh = Math.max(0.004, floorLv * 2.2);
   if (rms > thresh) lastVoiceT = now;
   voiced = now - lastVoiceT < 120;
-  if (heardT > meterT) { meterT = heardT; voicedAcc = 0; }   // recognition is still answering
+  if (lastResultT > meterT) { meterT = lastResultT; voicedAcc = 0; }   // recognition is still answering
   if (voiced) voicedAcc += step;
   $('#pr-status .dot').style.transform = 'scale(' + (1 + Math.min(1.2, rms / thresh * 0.35)) + ')';
-  // If you've been talking for a while and recognition has gone silent, the two are clashing
-  if (listening && micOk && now - meterT > 8000 && voicedAcc > 5) assistFailed('Speech recognition stopped while voice-level assist was on, so the assist is now off.', true);
 }
 function assistFailed(msg, restart) {
   settings.assist = false; saveSettings(); syncSheet(); levelOff();
   if (restart) { store.set('pulpito.notice', msg); freshStart(true); } else toast(msg, 6000);
 }
+/* The speech engine starts once and keeps running until you leave the app.
+   Pause only stops following your voice; it doesn't switch the microphone off,
+   because on iPhone a switched-off engine often comes back deaf. */
+let engineOn = false, engineUsed = false, lastResultT = 0, playT = 0, respawnT = 0, respawns = 0;
 function startListening() {
   if (!SR) { setStatus('Voice tracking needs Safari on iPhone with Siri & Dictation on'); toast('This browser cannot do speech recognition. Open in Safari on your iPhone.', 5000); return; }
   if (micStale) { freshStart(true); return; }
-  listening = true; micUsed = true; updatePlay(); setStatus('Listening…'); spawn();
+  listening = true; micUsed = true; lastSig = ''; playT = performance.now(); respawns = 0;
+  updatePlay(); setStatus('Listening…');
+  if (!engineOn) {
+    // A second start of a stopped engine in the same page is unreliable on iPhone: reload instead
+    if (engineUsed && !reloadedTooOften()) { freshStart(true); return; }
+    engineOn = true; engineUsed = true; spawn();
+    clearTimeout(watchdog);
+    watchdog = setTimeout(() => { if (listening && !micOk) recover('start'); }, 3000);
+  }
   if (settings.assist) setTimeout(levelOn, 300);
-  clearTimeout(watchdog);
-  if (!micOk) watchdog = setTimeout(() => { if (listening && !micOk) freshStart(true); }, 3000);
   if (settings.awake) wakeOn();
+  checkDeaf();
 }
 function spawn() {
-  try { rec && rec.abort(); } catch {}
+  const old = rec; rec = null;
+  try { old && old.stop(); } catch {}
   const r = new SR(); rec = r;
   r.lang = settings.lang; r.continuous = true; r.interimResults = true; r.maxAlternatives = 4;
   r.onstart = () => { micOk = true; clearTimeout(watchdog); };
   r.onresult = e => {
+    if (rec !== r) return;
+    lastResultT = performance.now(); respawns = 0;
+    if (!listening) return;                       // paused: keep the engine warm, ignore what it hears
+    // remember when each phrase was finished, and use only phrases from after you pressed play
+    r.doneAt = r.doneAt || [];
+    for (let i = 0; i < e.results.length; i++) if (e.results[i].isFinal && !r.doneAt[i]) r.doneAt[i] = lastResultT;
     let t = '';
-    for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript + ' ';
+    for (let i = 0; i < e.results.length; i++) {
+      if (r.doneAt[i] && r.doneAt[i] < playT) continue;
+      t += e.results[i][0].transcript + ' ';
+    }
     const words = t.trim().split(/\s+/).filter(Boolean);
     if (!words.length) return;
     if (settings.caption) $('#pr-heard').textContent = words.slice(-6).join(' ');
@@ -820,17 +839,19 @@ function spawn() {
     // If the top guess didn't place you, try the recognizer's other guesses for the latest phrase
     const last = e.results[e.results.length - 1];
     if (pos === before && last && last.length > 1) {
-      let head = '';
-      for (let i = 0; i < e.results.length - 1; i++) head += e.results[i][0].transcript + ' ';
+      const head = words.slice(0, Math.max(0, words.length - last[0].transcript.trim().split(/\s+/).length)).join(' ');
       for (let a = 1; a < last.length && pos === before; a++) {
-        lastSig = ''; onHeard((head + last[a].transcript).trim().split(/\s+/).filter(Boolean));
+        lastSig = ''; onHeard((head + ' ' + last[a].transcript).trim().split(/\s+/).filter(Boolean));
       }
     }
   };
   r.onerror = e => {
-    if (e.error === 'audio-capture') { if (meter) { assistFailed('Your iPhone can\'t share the microphone between speech recognition and the volume meter, so voice-level assist is off.', true); return; } freshStart(listening); return; }
+    if (rec !== r) return;
+    if (e.error === 'no-speech' || e.error === 'aborted') return;
+    if (e.error === 'audio-capture') { recover('audio'); return; }
     if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-      if (resuming) { resuming = false; stopListening(); setStatus('Tap play to continue'); return; }
+      engineOn = false; rec = null;
+      if (resuming) { resuming = false; engineUsed = false; stopListening(); setStatus('Tap play to continue'); return; }
       stopListening();
       setStatus('Microphone blocked');
       toast('Allow the microphone, and turn on Siri & Dictation in iPhone Settings → General → Keyboard.', 6000);
@@ -838,17 +859,49 @@ function spawn() {
   };
   r.onend = () => {
     if (rec !== r) return;
-    if (listening) { lastSig = ''; clearTimeout(restartT); restartT = setTimeout(() => listening && spawn(), 150); }
+    // iPhone ends each session after about a minute; start the next one right away
+    if (engineOn) { clearTimeout(restartT); restartT = setTimeout(() => { if (engineOn && rec === r) spawn(); }, 120); }
   };
-  try { r.start(); } catch { clearTimeout(restartT); restartT = setTimeout(() => listening && spawn(), 400); }
+  try { r.start(); } catch { clearTimeout(restartT); restartT = setTimeout(() => { if (engineOn) spawn(); }, 400); }
+}
+/* If you're talking (or have pressed play a while ago) and nothing comes back, restart the engine;
+   if that doesn't help, reload the page at your spot and keep going. */
+let deafT;
+function checkDeaf() {
+  clearTimeout(deafT);
+  deafT = setTimeout(() => {
+    if (!listening || !engineOn || document.hidden) return;
+    const now = performance.now();
+    const silentFor = now - Math.max(lastResultT, playT, respawnT);
+    const talking = meter && levelLive ? voicedAcc > 3 : silentFor > 15000;
+    if (silentFor > 4000 && talking) recover('deaf');
+    checkDeaf();
+  }, 1000);
+}
+function recover(why) {
+  if (!listening && why !== 'start') return;
+  if (respawns < 1 && why !== 'start') { respawns++; respawnT = performance.now(); voicedAcc = 0; spawn(); return; }
+  if (!reloadedTooOften()) { freshStart(true); return; }
+  // Reloading isn't helping: hand control back with a clear message
+  if (meter) { settings.assist = false; saveSettings(); syncSheet(); levelOff(); }
+  stopListening(); setStatus('Microphone not responding · tap play');
+  engineOn = false; engineUsed = false; try { rec && rec.abort(); } catch {} rec = null;
+}
+function reloadedTooOften() {
+  const recent = (store.get('pulpito.reloads', []) || []).filter(t => Date.now() - t < 90000);
+  return recent.length >= 2;
 }
 function stopListening() {
-  listening = false; clearTimeout(restartT);
+  listening = false; clearTimeout(deafT);
+  updatePlay(); setStatus();
+}
+function shutDown() {                            // only when the app goes to the background
+  listening = false; engineOn = false; clearTimeout(restartT); clearTimeout(deafT);
   const r = rec; rec = null; try { r && r.abort(); } catch {}
   levelOff(); updatePlay(); setStatus();
 }
 $('#pr-play').onclick = () => listening ? stopListening() : startListening();
-$('#pr-restart').onclick = () => { userHold = 0; dragVel = 0; pos = -1; shown = -1; predicted = pos; paintSaid(true); lastSig = ''; loop(); if (!listening) setStatus(); };
+$('#pr-restart').onclick = () => { userHold = 0; dragVel = 0; pos = -1; shown = -1; predicted = pos; paintSaid(true); lastSig = ''; playT = performance.now(); loop(); if (!listening) setStatus(); };
 $('#pr-close').onclick = () => { stopListening(); wakeOff(); renderHome(); show('home'); };
 $('#pr-edit').onclick = () => { stopListening(); wakeOff(); openEditor(current.id, true); };
 $('#pr-caption').onclick = () => { settings.caption = !settings.caption; saveSettings(); updatePlay(); syncSheet(); setStatus(listening ? (settings.caption ? 'Listening…' : '') : undefined); };
@@ -856,20 +909,22 @@ $('#pr-caption').onclick = () => { settings.caption = !settings.caption; saveSet
    So when you come back, the page quietly reloads at the same spot and resumes listening. */
 let micOk = false, micUsed = false, micStale = false, wasListening = false, watchdog, resuming = false;
 function freshStart(listenAfter) {
+  const recent = (store.get('pulpito.reloads', []) || []).filter(t => Date.now() - t < 90000);
+  recent.push(Date.now()); store.set('pulpito.reloads', recent);
   store.set('pulpito.resume', { id: current?.id, pos, listen: !!listenAfter, view: $('#prompter').hidden ? 'home' : 'prompter', at: Date.now() });
   location.reload();
 }
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     wasListening = listening;
-    if (listening) stopListening();
+    if (engineOn || meter) shutDown();
     if (micUsed) micStale = true;
     return;
   }
-  if (micStale) { freshStart(wasListening); return; }
+  if (micStale) { store.set('pulpito.reloads', []); freshStart(wasListening); return; }
   if (!$('#prompter').hidden && settings.awake) wakeOn();
 });
-window.addEventListener('pageshow', e => { if (e.persisted && micUsed) freshStart(wasListening); });
+window.addEventListener('pageshow', e => { if (e.persisted && micUsed) { store.set('pulpito.reloads', []); freshStart(wasListening); } });
 
 /* ---------- Screen wake lock ---------- */
 let lock = null;
@@ -904,12 +959,12 @@ $('#s-layout').onchange = e => {
 };
 $('#s-lead').onchange = e => { settings.lead = +e.target.value; saveSettings(); };
 $('#s-sens').onchange = e => { settings.sens = e.target.value; saveSettings(); eqCache.clear(); lastSig = ''; };
-$('#s-lang').onchange = e => { settings.lang = e.target.value; saveSettings(); if (listening) spawn(); };
+$('#s-lang').onchange = e => { settings.lang = e.target.value; saveSettings(); if (engineOn) spawn(); };
 [['s-mirror', 'mirror'], ['s-caption', 'caption'], ['s-awake', 'awake'], ['s-assist', 'assist']].forEach(([id, k]) => {
   $('#' + id).onclick = () => {
     settings[k] = !settings[k]; saveSettings(); syncSheet(); applySettings(); updatePlay();
     if (k === 'awake' && !$('#prompter').hidden) settings.awake ? wakeOn() : wakeOff();
-    if (k === 'assist' && listening) { settings.assist ? levelOn() : levelOff(); }
+    if (k === 'assist' && engineOn) { settings.assist ? levelOn() : levelOff(); }
     if (k === 'caption' && listening) setStatus(settings.caption ? 'Listening…' : '');
   };
 });
@@ -928,6 +983,7 @@ try { document.fonts.ready.then(() => rebuildSoon()); } catch {}
   openPrompter(r.id, { pos: r.pos });
   if (r.listen) { resuming = true; startListening(); setTimeout(() => { resuming = false; }, 4000); }
   else setStatus('Tap play to continue');
+  setTimeout(() => { if (lastResultT) store.set('pulpito.reloads', []); }, 30000);
 })();
 if (!store.get('pulpito.scripts', null)) saveScripts();
 
