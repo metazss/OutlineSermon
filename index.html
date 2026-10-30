@@ -796,11 +796,13 @@ function assistFailed(msg, restart) {
 /* The speech engine starts once and keeps running until you leave the app.
    Pause only stops following your voice; it doesn't switch the microphone off,
    because on iPhone a switched-off engine often comes back deaf. */
+let heardAll = [], heardRec = null, playBase = null;
 let engineOn = false, engineUsed = false, lastResultT = 0, playT = 0, respawnT = 0, respawns = 0;
 function startListening() {
   if (!SR) { setStatus('Voice tracking needs Safari on iPhone with Siri & Dictation on'); toast('This browser cannot do speech recognition. Open in Safari on your iPhone.', 5000); return; }
   if (micStale) { freshStart(true); return; }
   listening = true; micUsed = true; lastSig = ''; playT = performance.now(); respawns = 0;
+  playBase = heardRec === rec && heardAll.length ? { rec, n: heardAll.length, first: norm(heardAll[0]) } : null;
   updatePlay(); setStatus('Listening…');
   if (!engineOn) {
     // A second start of a stopped engine in the same page is unreliable on iPhone: reload instead
@@ -816,22 +818,22 @@ function startListening() {
 function spawn() {
   const old = rec; rec = null;
   try { old && old.stop(); } catch {}
-  const r = new SR(); rec = r;
+  const r = new SR(); rec = r; heardAll = []; heardRec = r;
   r.lang = settings.lang; r.continuous = true; r.interimResults = true; r.maxAlternatives = 4;
   r.onstart = () => { micOk = true; clearTimeout(watchdog); };
   r.onresult = e => {
     if (rec !== r) return;
     lastResultT = performance.now(); respawns = 0;
-    if (!listening) return;                       // paused: keep the engine warm, ignore what it hears
-    // remember when each phrase was finished, and use only phrases from after you pressed play
-    r.doneAt = r.doneAt || [];
-    for (let i = 0; i < e.results.length; i++) if (e.results[i].isFinal && !r.doneAt[i]) r.doneAt[i] = lastResultT;
     let t = '';
-    for (let i = 0; i < e.results.length; i++) {
-      if (r.doneAt[i] && r.doneAt[i] < playT) continue;
-      t += e.results[i][0].transcript + ' ';
-    }
-    const words = t.trim().split(/\s+/).filter(Boolean);
+    for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript + ' ';
+    const all = t.trim().split(/\s+/).filter(Boolean);
+    heardAll = all; heardRec = r;
+    if (!listening) return;                       // paused: keep the engine warm, ignore what it hears
+    // Skip words that were already in the transcript when you pressed play (said while paused).
+    // If the phone started a fresh transcript since then, everything in it is new.
+    let words = all;
+    if (playBase && playBase.rec === r && all.length >= playBase.n && playBase.n > 0 && norm(all[0]) === playBase.first) words = all.slice(playBase.n);
+    else if (playBase && (playBase.rec !== r || all.length < playBase.n || norm(all[0] || '') !== playBase.first)) playBase = null;
     if (!words.length) return;
     if (settings.caption) $('#pr-heard').textContent = words.slice(-6).join(' ');
     heardT = performance.now(); loop();
