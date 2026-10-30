@@ -18,7 +18,7 @@
    Single deliberate dark look: midnight ink, periwinkle "reading light" accent. */
 :root{
   --ink:#0A0F1C; --panel:#141B2D; --panel-2:#1C2540; --line:#273152;
-  --text:#EEF1FA; --muted:#8A93AD; --said:#4E5875;
+  --text:#EEF1FA; --muted:#8A93AD; --said:#4E5875; --soon:#A9B1CC;
   --accent:#8C9BFF; --accent-ink:#0A0F1C; --glow:rgba(140,155,255,.24);
   --danger:#FF7A85;
   --f-display:"Montserrat","Helvetica Neue",Arial,sans-serif;
@@ -79,6 +79,12 @@ h1 span{color:var(--accent)}
 #pr-text{position:relative;padding:0 max(22px,calc(var(--safe-r) + 16px)) 0 max(22px,calc(var(--safe-l) + 16px));max-width:900px;margin:0 auto;font-size:var(--size,40px);line-height:1.28;font-weight:700;transition:transform .2s}
 #pr-text.mirror{transform:scaleX(-1)}
 #pr-text p{margin:0 0 .7em}
+/* Lyrics layout: one phrase per line, the current line lit, upcoming lines softer */
+#pr-text.lines .para{margin:0 0 1em}
+#pr-text.lines .ln{margin:0 0 .3em;line-height:1.18}
+#pr-text.lines .w{color:var(--soon)}
+#pr-text.lines .ln.cur .w{color:var(--text)}
+#pr-text.lines .ln .w.said{color:var(--said)}
 .w{color:var(--text);transition:color .12s ease-out}
 .w.said{color:var(--said)}
 .w.now{color:var(--said)}
@@ -202,6 +208,15 @@ select{background:var(--panel-2);color:var(--text);border:1px solid var(--line);
   <div class="grab"></div>
   <h2>Settings</h2>
   <div class="set">
+    <label for="s-layout">Layout</label>
+    <select id="s-layout">
+      <option value="short">Short lines, like song lyrics</option>
+      <option value="medium">Longer lines (up to 2 rows)</option>
+      <option value="para">Paragraphs</option>
+    </select>
+    <small>Splits your sermon into short phrases at natural pauses, each fitting the screen. The line you're on is brightest. A smaller text size gives longer phrases.</small>
+  </div>
+  <div class="set">
     <div class="h"><label for="s-size">Text size</label><span class="v" id="s-size-v"></span></div>
     <input type="range" id="s-size" min="24" max="80" step="2">
   </div>
@@ -283,7 +298,7 @@ Si pierdes tu lugar, toca cualquier palabra para empezar desde ahí. Que Dios be
 let scripts = store.get('pulpito.scripts', null);
 if (!Array.isArray(scripts)) scripts = [DEMO];
 const saveScripts = () => store.set('pulpito.scripts', scripts);
-const settings = Object.assign({ size: 40, focus: 30, lang: 'es-MX', mirror: false, caption: true, awake: true, sens: 'high', lead: 2, assist: false },
+const settings = Object.assign({ size: 40, focus: 30, lang: 'es-MX', mirror: false, caption: true, awake: true, sens: 'high', lead: 2, assist: false, layout: 'short' },
   store.get('pulpito.settings', {}));
 const saveSettings = () => store.set('pulpito.settings', settings);
 const dismissed = store.get('pulpito.dismissed', {});
@@ -474,21 +489,93 @@ function openPrompter(id, restore) {
   y = targetY(); vel = 0; dragVel = 0; userHold = 0; place();
   updatePlay(); setStatus(); loop();
   if (settings.awake) wakeOn();
+  // Short lines must each fit on one row; if any wrapped, lay out again a little tighter
+  if (lineMode && settings.layout === 'short' && fitTries < 4) {
+    const wrapped = lines.some(l => l.childElementCount > 1 && l.offsetHeight > parseFloat(getComputedStyle(l).fontSize) * 1.6);
+    if (wrapped) { fitTries++; fitScale *= 0.93; openPrompter(id, { pos }); return; }
+  }
+  fitTries = 0;
+}
+/* Break a paragraph into short phrases, like song lyrics: at sentence ends, at commas
+   once a line has some length, before joining words when a line is getting long, and never past max. */
+const JOINERS = new Set(['y','e','o','u','pero','porque','que','donde','cuando','para','como','sino','pues','mientras','aunque','si','ni','hasta','and','but','because','that','when','where','so','or','which','who','until']);
+const WEAK_END = new Set(['el','la','los','las','un','una','unos','unas','su','sus','mi','mis','tu','tus','de','del','a','al','en','con','por','para','que','y','e','o','u','lo','le','les','se','no','me','te','nos','the','a','an','of','to','in','on','and','or','my','your','his','her','our','their','for','with','is','que','cuando','donde','como','si','muy','más','tan']);
+const bare = w => w.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+function splitLines(words, max) {
+  // 1. clauses: break after sentence ends, and after commas once the clause has some length
+  const clauses = []; let c = [], len = 0;
+  words.forEach(w => {
+    c.push(w); len += (len ? 1 : 0) + w.length;
+    const strong = /[.?!:;…]["'”»)\]]*$/.test(w), soft = /[,—–]["'”»)\]]*$/.test(w);
+    if ((strong && (c.length >= 2 || len >= 8)) || (soft && len >= max * 0.4)) { clauses.push(c); c = []; len = 0; }
+  });
+  if (c.length) clauses.push(c);
+  // 2. a clause longer than a line is split into evenly sized lines at the most natural points
+  const out = [];
+  clauses.forEach(cl => {
+    const total = cl.join(' ').length;
+    if (total <= max) { out.push(cl); return; }
+    const target = total / Math.ceil(total / max), n = cl.length;
+    const best = new Array(n + 1).fill(Infinity), from = new Array(n + 1).fill(0); best[0] = 0;
+    for (let j = 1; j <= n; j++) for (let i = j - 1; i >= 0; i--) {
+      const L = cl.slice(i, j).join(' ').length;
+      if (L > max && j - i > 1) break;
+      let cost = best[i] + (L - target) ** 2 + 60;
+      if (j < n && WEAK_END.has(bare(cl[j - 1]))) cost += 900;
+      if (i > 0 && JOINERS.has(bare(cl[i]))) cost -= 120;
+      if (j - i === 1 && n > 1) cost += 400;
+      if (cost < best[j]) { best[j] = cost; from[j] = i; }
+    }
+    const parts = []; for (let j = n; j > 0; j = from[j]) parts.unshift(cl.slice(from[j], j));
+    out.push(...parts);
+  });
+  // 3. fold a stray one-word line into its neighbour when it fits
+  for (let i = out.length - 1; i > 0; i--) if (out[i].length === 1 && out[i - 1].join(' ').length + 1 + out[i][0].length <= max * 1.2) { out[i - 1].push(out[i][0]); out.splice(i, 1); }
+  return out;
+}
+/* How many characters fit on one line of the screen at the chosen text size */
+let measureCtx = null, fitScale = 1, fitTries = 0;
+function lineChars() {
+  const avail = Math.min(window.innerWidth || 390, 900) - 48;
+  try {
+    measureCtx = measureCtx || document.createElement('canvas').getContext('2d');
+    measureCtx.font = '700 ' + settings.size + 'px "Atkinson Hyperlegible", -apple-system, "Helvetica Neue", Arial, sans-serif';
+    const sample = 'donde Jesús les abre su corazón a sus discípulos justo antes';
+    const per = measureCtx.measureText(sample).width / sample.length;
+    return Math.max(6, Math.floor(avail / per * 0.9 * fitScale));
+  } catch { return Math.max(6, Math.floor(avail / (settings.size * 0.56))); }
+}
+let rebuildT;
+function rebuildSoon() {
+  clearTimeout(rebuildT);
+  rebuildT = setTimeout(() => { if (!$('#prompter').hidden && current && lineMode) { fitScale = 1; fitTries = 0; openPrompter(current.id, { pos }); } }, 250);
+}
+let lines = [], lineOfM = [], curLine = -1, lineMode = false;
+function addWord(w, parent) {
+  const sp = document.createElement('span'); sp.className = 'w'; sp.textContent = w;
+  sp.dataset.t = allEls.length; allEls.push(sp);
+  const k = norm(w);
+  if (k) { sp.dataset.m = keys.length; keys.push(k); mEls.push(sp); m2t.push(allEls.length - 1); lineOfM.push(lines.length - 1); }
+  parent.append(sp, ' ');
 }
 function build(text) {
   textEl.innerHTML = ''; keys = []; mEls = []; allEls = []; m2t = []; pos = -1; lastSig = ''; nextEl = null;
+  lines = []; lineOfM = []; curLine = -1;
+  lineMode = settings.layout !== 'para';
+  textEl.classList.toggle('lines', lineMode);
+  const fit = lineChars(), max = settings.layout === 'medium' ? Math.round(fit * 1.8) : fit;
   const paras = text.replace(/\r/g, '').split(/\n\s*\n|\n/).map(p => p.trim()).filter(Boolean);
   const frag = document.createDocumentFragment();
   paras.forEach(p => {
-    const pe = document.createElement('p');
-    p.split(/\s+/).forEach(w => {
-      const sp = document.createElement('span'); sp.className = 'w'; sp.textContent = w;
-      sp.dataset.t = allEls.length; allEls.push(sp);
-      const k = norm(w);
-      if (k) { sp.dataset.m = keys.length; keys.push(k); mEls.push(sp); m2t.push(allEls.length - 1); }
-      pe.append(sp, ' ');
+    const words = p.split(/\s+/);
+    if (!lineMode) { const pe = document.createElement('p'); words.forEach(w => addWord(w, pe)); frag.append(pe); return; }
+    const pd = document.createElement('div'); pd.className = 'para';
+    splitLines(words, max).forEach(lw => {
+      const ld = document.createElement('div'); ld.className = 'ln'; lines.push(ld);
+      lw.forEach(w => addWord(w, ld));
+      pd.append(ld);
     });
-    frag.append(pe);
+    frag.append(pd);
   });
   textEl.append(frag);
 }
@@ -517,14 +604,22 @@ function paintSaid(full) {
   applied = tok;
   const n = mEls[si + 1] || null;
   if (n !== nextEl) { nextEl?.classList.remove('next'); n?.classList.add('next'); nextEl = n; }
+  if (lineMode && lines.length) {
+    const li = lineOfM[Math.min(si + 1, mEls.length - 1)] ?? 0;
+    if (full) lines.forEach((l, i) => l.classList.toggle('cur', i === li));
+    else if (li !== curLine) { lines[curLine]?.classList.remove('cur'); lines[li]?.classList.add('cur'); }
+    curLine = li;
+  }
   $('#pr-prog').style.transform = 'scaleX(' + (keys.length ? Math.max(0, shown + 1) / keys.length : 0) + ')';
 }
 
 /* Scrolling: the text moves with a GPU transform driven by a critically damped spring */
 let y = 0, vel = 0, dragVel = 0, userHold = 0, running = false, lastT = 0;
 function targetY() {
-  const el = mEls[Math.max(0, Math.floor(shown) + 1)] || mEls[mEls.length - 1];
+  const idx = Math.min(Math.max(0, Math.floor(shown) + 1), mEls.length - 1);
+  let el = mEls[idx];
   if (!el) return 0;
+  if (lineMode && lines[lineOfM[idx]]) el = lines[lineOfM[idx]];
   return el.offsetTop + el.offsetHeight / 2 - scroller.clientHeight * settings.focus / 100;
 }
 const minY = () => -scroller.clientHeight * 0.6;
@@ -791,7 +886,7 @@ function applySettings() {
 function syncSheet() {
   $('#s-size').value = settings.size; $('#s-size-v').textContent = settings.size + ' pt';
   $('#s-focus').value = settings.focus; $('#s-focus-v').textContent = settings.focus + '%';
-  $('#s-lang').value = settings.lang; $('#s-sens').value = settings.sens; $('#s-lead').value = settings.lead;
+  $('#s-lang').value = settings.lang; $('#s-sens').value = settings.sens; $('#s-lead').value = settings.lead; $('#s-layout').value = settings.layout;
   $('#s-mirror').setAttribute('aria-checked', settings.mirror);
   $('#s-caption').setAttribute('aria-checked', settings.caption);
   $('#s-awake').setAttribute('aria-checked', settings.awake);
@@ -801,8 +896,12 @@ function openSheet() { syncSheet(); $('#sheet').hidden = $('#sheet-bg').hidden =
 function closeSheet() { $('#sheet').hidden = $('#sheet-bg').hidden = true; }
 $('#home-settings').onclick = openSheet; $('#pr-settings').onclick = openSheet;
 $('#sheet-bg').onclick = closeSheet; $('#sheet-done').onclick = closeSheet;
-$('#s-size').oninput = e => { settings.size = +e.target.value; saveSettings(); syncSheet(); applySettings(); };
+$('#s-size').oninput = e => { settings.size = +e.target.value; saveSettings(); syncSheet(); applySettings(); rebuildSoon(); };
 $('#s-focus').oninput = e => { settings.focus = +e.target.value; saveSettings(); syncSheet(); applySettings(); };
+$('#s-layout').onchange = e => {
+  settings.layout = e.target.value; saveSettings();
+  if (!$('#prompter').hidden && current) openPrompter(current.id, { pos });
+};
 $('#s-lead').onchange = e => { settings.lead = +e.target.value; saveSettings(); };
 $('#s-sens').onchange = e => { settings.sens = e.target.value; saveSettings(); eqCache.clear(); lastSig = ''; };
 $('#s-lang').onchange = e => { settings.lang = e.target.value; saveSettings(); if (listening) spawn(); };
@@ -814,9 +913,11 @@ $('#s-lang').onchange = e => { settings.lang = e.target.value; saveSettings(); i
     if (k === 'caption' && listening) setStatus(settings.caption ? 'Listening…' : '');
   };
 });
-window.addEventListener('resize', () => { if (!$('#prompter').hidden) loop(); });
+let lastW = window.innerWidth;
+window.addEventListener('resize', () => { if ($('#prompter').hidden) return; if (Math.abs(window.innerWidth - lastW) > 40) { lastW = window.innerWidth; rebuildSoon(); } loop(); });
 
 applySettings(); renderHome();
+try { document.fonts.ready.then(() => rebuildSoon()); } catch {}
 (() => {
   const note = store.get('pulpito.notice', null);
   if (note) { store.set('pulpito.notice', null); setTimeout(() => toast(note, 6000), 600); }
