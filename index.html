@@ -118,6 +118,7 @@ h1 span{color:var(--accent)}
 .set .h{display:flex;justify-content:space-between;align-items:center;gap:10px}
 .set .v{color:var(--accent);font-weight:700;font-variant-numeric:tabular-nums}
 .set small{color:var(--muted);font-size:13px}
+.ver{color:var(--muted);font-size:12px;text-align:center;margin:12px 0 0;font-variant-numeric:tabular-nums}
 .beta{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);border:1px solid var(--accent);border-radius:999px;padding:1px 7px;margin-left:4px;vertical-align:2px}
 .status .dot{transition:transform .06s linear}
 input[type=range]{width:100%;accent-color:var(--accent)}
@@ -267,6 +268,7 @@ select{background:var(--panel-2);color:var(--text);border:1px solid var(--line);
     <div class="h"><span>Keep screen awake<br><small>While the prompter is open</small></span><button class="toggle" id="s-awake" role="switch" aria-label="Keep screen awake"></button></div>
   </div>
   <button class="btn primary" id="sheet-done" style="width:100%;margin-top:8px">Done</button>
+  <p class="ver" id="ver"></p>
 </div>
 
 <div class="toast" id="toast" hidden></div>
@@ -274,6 +276,7 @@ select{background:var(--panel-2);color:var(--text);border:1px solid var(--line);
 <script>
 (() => {
 'use strict';
+const APP_VERSION = '2026.10.30-b';
 const $ = s => document.querySelector(s);
 
 /* ---------- Storage ---------- */
@@ -834,7 +837,7 @@ function spawn() {
     let words = all;
     if (playBase && playBase.rec === r && all.length >= playBase.n && playBase.n > 0 && norm(all[0]) === playBase.first) words = all.slice(playBase.n);
     else if (playBase && (playBase.rec !== r || all.length < playBase.n || norm(all[0] || '') !== playBase.first)) playBase = null;
-    if (!words.length) return;
+    if (!words.length) { if (performance.now() - playT > 1500) { playBase = null; words = all; } else return; }
     if (settings.caption) $('#pr-heard').textContent = words.slice(-6).join(' ');
     heardT = performance.now(); loop();
     const before = pos; onHeard(words);
@@ -974,6 +977,21 @@ let lastW = window.innerWidth;
 window.addEventListener('resize', () => { if ($('#prompter').hidden) return; if (Math.abs(window.innerWidth - lastW) > 40) { lastW = window.innerWidth; rebuildSoon(); } loop(); });
 
 applySettings(); renderHome();
+$('#ver').textContent = 'Version ' + APP_VERSION;
+/* Always run the newest version: GitHub can serve a saved copy for up to 10 minutes after an update */
+(async () => {
+  try {
+    if (!navigator.onLine) return;
+    const res = await fetch(location.pathname + '?check=' + Date.now(), { cache: 'no-store' });
+    const m = (await res.text()).match(/const APP_VERSION = '([^']+)'/);
+    if (!m || m[1] === APP_VERSION) return;
+    let tried = null; try { tried = sessionStorage.getItem('pulpito.tried'); } catch {}
+    if (tried === m[1]) return;
+    try { sessionStorage.setItem('pulpito.tried', m[1]); } catch {}
+    if (listening || engineUsed) return;          // never interrupt a sermon in progress
+    location.replace(location.pathname + '?v=' + encodeURIComponent(m[1]) + location.hash);
+  } catch {}
+})();
 try { document.fonts.ready.then(() => rebuildSoon()); } catch {}
 (() => {
   const note = store.get('pulpito.notice', null);
